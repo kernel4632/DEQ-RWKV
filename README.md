@@ -2,7 +2,7 @@
 
   # DEQ-RWKV
   
-  <p><em>结合深度均衡模型(DEQ)与RWKV-v7架构的轻量级AI模型</em></p>
+  <p>结合深度均衡模型(DEQ)与RWKV-v7架构的轻量级AI模型</p>
   
   <div>
     <img src="https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white" />
@@ -11,7 +11,7 @@
   </div>
 </div>
 
-这是一个实验性质的开源项目，把DEQ（深度均衡模型）算法和RWKV-v7架构结合起来玩一玩🤗
+这是一个实验和学习性质的开源项目，把**DEQ**（深度均衡模型）算法和**RWKV-v7**架构结合起来玩一玩🤗
 
 ---
 
@@ -22,13 +22,13 @@
 <div class="highlight-box">
   <h3>💡 多轻量？</h3>
   <ul>
-    <li>传统RWKV-v7：1个768维嵌入的block ≈ <strong>28.7M</strong> 参数</li>
-    <li>官方最小的0.1B模型：12个block ≈ <strong>344M</strong> 参数</li>
+    <li>传统RWKV-v7：1个768维嵌入的block ≈ <strong>28.7M</strong> 文件大小</li>
+    <li>官方最小的0.1B模型：12个block ≈ <strong>344M</strong> 文件大小</li>
     <li><strong>DEQ-RWKV</strong>：仅需 <strong>1个block</strong> ，你想想🙃</li>
   </ul>
 </div>
 
-**显存优化**：大幅降低训练和推理时的显存占用
+**显存优化**：由于DEQ特性，中间的多个block只需存一个block的梯度，大幅降低训练的显存占用
 
 ---
 
@@ -65,7 +65,7 @@
 
 ---
 
-## 感谢 🙏
+## 致谢 🙏
 
-- 🖥️感谢QQ好友**3A是个好同志**赞助的算力支持！
+- 🖥️感谢 **[Mingkai Zhou](https://github.com/sg-first)** 赞助的算力支持！
 - 🙌感谢 RWKV 社区提供的开源代码！
