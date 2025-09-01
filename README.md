@@ -1,4 +1,5 @@
 <div align="center">
+<img src="logo.png" alt="DEQ-RWKV的LOGO" />
 
   # DEQ-RWKV
   
