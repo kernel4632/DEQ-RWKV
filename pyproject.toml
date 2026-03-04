@@ -1,0 +1,14 @@
+[project]
+name = "deq-rwkv"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "lightning>=2.6.1",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.2",
+    "torch>=2.10.0",
+    "torchdeq>=0.1.0",
+    "transformers>=4.30.0",
+]
