@@ -26,7 +26,7 @@ class Config:
     f_tol = 1e-6
 
     # 训练配置
-    lr = 3e-4
+    lr = 1e-3
     batch_size = 10
     max_length = 32
     epochs = 100
@@ -67,7 +67,7 @@ class TrainingModule(L.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.model.block.parameters(), lr=self.lr)
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
         scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3)
         return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
 
