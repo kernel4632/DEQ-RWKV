@@ -1,7 +1,7 @@
 [project]
 name = "deq-rwkv"
 version = "0.1.0"
-description = "Add your description here"
+description = "深度均衡模型与 RWKV-v7 架构结合的实验性项目"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
