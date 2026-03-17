@@ -8,7 +8,7 @@ from pathlib import Path
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor, Timer
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 
 from muon import MuonWithAuxAdam
 from ops.model import Model
