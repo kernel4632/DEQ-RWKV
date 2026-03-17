@@ -6,6 +6,8 @@ import lightning as L
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 
+from muon import MuonWithAuxAdam
+
 from ops.model import Model
 from data.dataset import create_dataloaders, device
 
@@ -69,7 +71,37 @@ class TrainingModule(L.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
+        # 取出主干块的参数，Muon 只对“矩阵型权重”更有效
+        hidden_weights = [p for p in self.model.block.parameters() if p.ndim >= 2]
+
+        # 主干块里的一维参数（如增益、偏置），不适合 Muon
+        hidden_gains_biases = [p for p in self.model.block.parameters() if p.ndim < 2]
+
+        # 词表嵌入、输出层、归一化层属于“非主干参数”，继续用 AdamW
+        nonhidden_params = [
+            *self.model.emb.parameters(),
+            *self.model.ln_out.parameters(),
+            *self.model.head.parameters(),
+        ]
+
+        # 分组：主干用 Muon；其它参数用 AdamW
+        param_groups = [
+            dict(
+                params=hidden_weights,
+                use_muon=True,
+                lr=0.02,
+                weight_decay=0.01,
+            ),
+            dict(
+                params=hidden_gains_biases + nonhidden_params,
+                use_muon=False,
+                lr=self.lr,
+                betas=(0.9, 0.95),
+                weight_decay=0.01,
+            ),
+        ]
+
+        optimizer = MuonWithAuxAdam(param_groups)
         scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3)
         return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "验证损失"}
 
