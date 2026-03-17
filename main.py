@@ -67,20 +67,25 @@ class TrainingModule(L.LightningModule):
         return self._step(batch, "val")
 
     def configure_optimizers(self):
-        block_matrix = [p for p in self.model.block.parameters() if p.ndim >= 2]
-        block_other = [p for p in self.model.block.parameters() if p.ndim < 2]
-        non_block = [*self.model.emb.parameters(), *self.model.ln_out.parameters(), *self.model.head.parameters()]
+        if self.device.type == "cpu":
+            # CPU 测试：直接用 AdamW，不依赖分布式
+            optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=0.01)
+        else:
+            block_matrix = [p for p in self.model.block.parameters() if p.ndim >= 2]
+            block_other = [p for p in self.model.block.parameters() if p.ndim < 2]
+            non_block = [*self.model.emb.parameters(), *self.model.ln_out.parameters(), *self.model.head.parameters()]
 
-        optimizer = MuonWithAuxAdam(
-            [
-                dict(params=block_matrix, use_muon=True, lr=0.02, weight_decay=0.01),
-                dict(params=block_other + non_block, use_muon=False, lr=self.lr, betas=(0.9, 0.95), weight_decay=0.01),
-            ]
-        )
+            optimizer = MuonWithAuxAdam(
+                [
+                    dict(params=block_matrix, use_muon=True, lr=0.02, weight_decay=0.01),
+                    dict(params=block_other + non_block, use_muon=False, lr=self.lr, betas=(0.9, 0.95), weight_decay=0.01),
+                ]
+            )
 
+        scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=3)
         return {
             "optimizer": optimizer,
-            "lr_scheduler": {"scheduler": ReduceLROnPlateau(optimizer, factor=0.5, patience=3), "monitor": "val_loss"},
+            "lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"},
         }
 
 
