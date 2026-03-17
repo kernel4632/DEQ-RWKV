@@ -1,14 +1,12 @@
 import sys
-import time
 import torch
 import torch.nn as nn
 from dataclasses import dataclass
-from pathlib import Path
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import lightning as L
-from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor, Timer
+from lightning.pytorch.loggers import CSVLogger
+from lightning.pytorch.callbacks import ModelCheckpoint
 
 from muon import MuonWithAuxAdam
 from ops.model import Model
@@ -36,12 +34,6 @@ class Config:
     max_length: int = 32
     epochs: int = 100
     val_split: float = 0.1
-    # 早停
-    early_stop_patience: int = 10
-    # 路径
-    data_path: str = "data/test.jsonl"
-    ckpt_dir: str = "checkpoints"
-    log_dir: str = "logs"
 
 
 cfg = Config()
@@ -51,10 +43,9 @@ cfg = Config()
 class TrainingModule(L.LightningModule):
     def __init__(self, args, lr=3e-4):
         super().__init__()
-        self.save_hyperparameters(ignore=["args"])  # 保存超参到 checkpoint
         self.model = Model(args)
         self.lr = lr
-        self.criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, x):
         return self.model(x)
@@ -62,71 +53,22 @@ class TrainingModule(L.LightningModule):
     def _step(self, batch, prefix):
         input_ids, target_ids = batch
         output, _ = self(input_ids)
-
-        logits_flat = output.view(-1, output.size(-1))
-        targets_flat = target_ids.view(-1)
-
-        # 1) Loss
-        loss = self.criterion(logits_flat, targets_flat)
-
-        # 2) 困惑度 (Perplexity)
-        ppl = loss.exp().clamp(max=1e4)  # 防止 inf
-
-        # 3) 准确率 (token-level accuracy)
-        mask = targets_flat != -100
-        if mask.any():
-            preds = logits_flat.argmax(dim=-1)
-            acc = (preds[mask] == targets_flat[mask]).float().mean()
-        else:
-            acc = torch.tensor(0.0, device=loss.device)
-
-        # 4) Top-5 准确率
-        if mask.any():
-            top5 = logits_flat.topk(5, dim=-1).indices  # [N, 5]
-            top5_correct = (top5[mask] == targets_flat[mask].unsqueeze(-1)).any(dim=-1)
-            top5_acc = top5_correct.float().mean()
-        else:
-            top5_acc = torch.tensor(0.0, device=loss.device)
-
-        # 统一 log
-        sync = prefix == "val"
-        self.log(f"{prefix}_loss", loss, prog_bar=True, on_step=(prefix == "train"), on_epoch=True, sync_dist=sync)
-        self.log(f"{prefix}_ppl", ppl, prog_bar=True, on_epoch=True, sync_dist=sync)
-        self.log(f"{prefix}_acc", acc, prog_bar=True, on_epoch=True, sync_dist=sync)
-        self.log(f"{prefix}_top5_acc", top5_acc, on_epoch=True, sync_dist=sync)
-
+        loss = self.criterion(output.view(-1, output.size(-1)), target_ids.view(-1))
+        self.log(f"{prefix}_loss", loss, prog_bar=True, on_epoch=True)
         return loss
 
     def training_step(self, batch, batch_idx):
         loss = self._step(batch, "train")
         if loss.isnan():
-            raise ValueError("损失中出现 NaN，训练终止")
-
-        # 5) 梯度范数 — 在 backward 之后 optimizer step 之前自动被 gradient_clip 截断，
-        #    这里手动记录未截断的梯度范数用于监控
-        total_norm = sum(p.grad.norm() ** 2 for p in self.parameters() if p.grad is not None) ** 0.5
-        self.log("grad_norm", total_norm, on_step=True, prog_bar=False)
-
+            raise ValueError("损失中出现 NaN")
         return loss
 
     def validation_step(self, batch, batch_idx):
         return self._step(batch, "val")
 
-    def on_train_epoch_start(self):
-        self._epoch_start = time.time()
-
-    def on_train_epoch_end(self):
-        # 6) Epoch 耗时
-        elapsed = time.time() - self._epoch_start
-        self.log("epoch_time_sec", elapsed, on_epoch=True, prog_bar=False)
-
-        # 7) 当前学习率
-        opt = self.optimizers()
-        current_lr = opt.param_groups[0]["lr"] if opt else self.lr
-        self.log("lr", current_lr, on_epoch=True, prog_bar=True)
-
     def configure_optimizers(self):
         if self.device.type == "cpu":
+            # CPU 测试：直接用 AdamW，不依赖分布式
             optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=0.01)
         else:
             block_matrix = [p for p in self.model.block.parameters() if p.ndim >= 2]
@@ -148,19 +90,14 @@ class TrainingModule(L.LightningModule):
 
 
 # ==================== 训练 ====================
-def train(resume_from: str = None):
+def train():
     model = TrainingModule(cfg, lr=cfg.lr)
     train_loader, val_loader = create_dataloaders(
-        cfg.data_path,
+        "data/test.jsonl",
         batch_size=cfg.batch_size,
         max_length=cfg.max_length,
         val_split=cfg.val_split,
     )
-
-    # 8) 模型参数量统计
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"模型参数：{total_params:,} 总量 / {trainable:,} 可训练")
 
     trainer = L.Trainer(
         max_epochs=cfg.epochs,
@@ -168,37 +105,22 @@ def train(resume_from: str = None):
         devices=1,
         log_every_n_steps=1,
         gradient_clip_val=0.5,
-        logger=[
-            CSVLogger(cfg.log_dir, name="csv"),
-            TensorBoardLogger(cfg.log_dir, name="tensorboard"),  # tensorboard --logdir logs/tensorboard
-        ],
+        logger=CSVLogger("logs/", name="training"),
         callbacks=[
             ModelCheckpoint(
-                dirpath=cfg.ckpt_dir,
+                dirpath="checkpoints/",
                 filename="model-{epoch:02d}-{val_loss:.4f}",
                 monitor="val_loss",
                 mode="min",
                 save_top_k=3,
                 save_last=True,
-            ),
-            EarlyStopping(
-                monitor="val_loss",
-                patience=cfg.early_stop_patience,
-                mode="min",
-                verbose=True,
-            ),
-            LearningRateMonitor(logging_interval="epoch"),
+            )
         ],
     )
 
-    trainer.fit(model, train_loader, val_loader, ckpt_path=resume_from)
-
-    # 保存最终权重
-    Path(cfg.ckpt_dir).mkdir(parents=True, exist_ok=True)
-    torch.save(model.model.state_dict(), f"{cfg.ckpt_dir}/final_model.pt")
-
-    val_loss = trainer.callback_metrics.get("val_loss")
-    print(f"训练完成！最终验证损失：{val_loss:.4f}" if val_loss else "训练完成！（无验证指标）")
+    trainer.fit(model, train_loader, val_loader)
+    torch.save(model.model.state_dict(), "checkpoints/final_model.pt")
+    print(f"训练完成！最终验证损失：{trainer.callback_metrics['val_loss']:.4f}")
 
 
 # ==================== 推理 ====================
@@ -223,18 +145,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "generate":
         prompt = sys.argv[2] if len(sys.argv) > 2 else "你好"
         model = Model(cfg).to(device)
-        ckpt = f"{cfg.ckpt_dir}/final_model.pt"
+        ckpt = "checkpoints/final_model.pt"
         try:
             model.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
         except FileNotFoundError:
             sys.exit(f"未找到模型文件：{ckpt}，请先训练模型")
         print(f"输入：{prompt}\n输出：{generate(model, prompt)}")
-
-    elif len(sys.argv) > 1 and sys.argv[1] == "resume":
-        # 断点续训：python main.py resume [checkpoint_path]
-        ckpt_path = sys.argv[2] if len(sys.argv) > 2 else f"{cfg.ckpt_dir}/last.ckpt"
-        print(f"从 {ckpt_path} 恢复训练...")
-        train(resume_from=ckpt_path)
-
     else:
         train()
