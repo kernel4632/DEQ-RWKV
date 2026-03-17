@@ -30,24 +30,18 @@ class Model(nn.Module):
 
     def forward(self, x):
         x = self.preprocess(x)
-
         # 设置索引参数，给DE用，内部不会改变
         self.block.cmix.idx = x
         x = self.emb(x)
-
         # 重置值残差参数
         self.block.tmix.v_first = None
-
         # 执行 DEQ 求解
         out, info = self.deq(self.block, x)
-
         # 获取最终输出（固定点解）
         x = out[-1]
-
         # 应用输出层归一化和投影
         x = self.ln_out(x)
         x = self.head(x)
-
         return x, info
 
     def preprocess(self, inputData):
