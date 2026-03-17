@@ -60,14 +60,16 @@ class TrainingModule(L.LightningModule):
         if torch.isnan(loss).any():
             raise ValueError("损失中出现 NaN")
 
-        self.log("训练损失", loss, prog_bar=True, on_epoch=True)
+        # 训练指标统一用 train_loss，方便日志和回调读取
+        self.log("train_loss", loss, prog_bar=True, on_epoch=True)
         self.log("学习率", self.lr, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss = self.calculate_loss(batch)
 
-        self.log("验证损失", loss, prog_bar=True, on_epoch=True)
+        # 这里记录为 val_loss，和 checkpoint 与 scheduler 的 monitor 对齐
+        self.log("val_loss", loss, prog_bar=True, on_epoch=True)
         return loss
 
     def configure_optimizers(self):
@@ -103,7 +105,9 @@ class TrainingModule(L.LightningModule):
 
         optimizer = MuonWithAuxAdam(param_groups)
         scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "验证损失"}
+
+        # 监控项必须和 validation_step 的 log 名字一致
+        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
 
 
 # ==================== 训练函数 ====================
@@ -115,7 +119,12 @@ def train():
     model = TrainingModule(args, lr=Config.lr)
 
     # 准备数据（自动拆分训练集和验证集）
-    train_loader, val_loader = create_dataloaders("data/test.jsonl", batch_size=Config.batch_size, max_length=Config.max_length, val_split=Config.val_split)
+    train_loader, val_loader = create_dataloaders(
+        "data/test.jsonl",
+        batch_size=Config.batch_size,
+        max_length=Config.max_length,
+        val_split=Config.val_split,
+    )
 
     # 配置日志记录
     logger = CSVLogger("logs/", name="training")
