@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 
 from muon import MuonWithAuxAdam
 from ops.model import Model
@@ -53,8 +53,31 @@ class TrainingModule(L.LightningModule):
     def _step(self, batch, prefix):
         input_ids, target_ids = batch
         output, _ = self(input_ids)
-        loss = self.criterion(output.view(-1, output.size(-1)), target_ids.view(-1))
+
+        logits_flat = output.view(-1, output.size(-1))
+        targets_flat = target_ids.view(-1)
+        loss = self.criterion(logits_flat, targets_flat)
+
+        with torch.no_grad():
+            ppl = loss.exp()  # 困惑度
+            preds = logits_flat.argmax(dim=-1)
+            mask = targets_flat != -100  # 忽略 padding
+            acc = (preds[mask] == targets_flat[mask]).float().mean()  # token 准确率
+
+            # top-5 准确率
+            top5 = logits_flat.topk(5, dim=-1).indices
+            top5_acc = (top5[mask] == targets_flat[mask].unsqueeze(-1)).any(-1).float().mean()
+
         self.log(f"{prefix}_loss", loss, prog_bar=True, on_epoch=True)
+        self.log(f"{prefix}_ppl", ppl, prog_bar=True, on_epoch=True)
+        self.log(f"{prefix}_acc", acc, prog_bar=True, on_epoch=True)
+        self.log(f"{prefix}_top5_acc", top5_acc, on_epoch=True)
+
+        # 训练时额外记录学习率
+        if prefix == "train":
+            lr = self.optimizers().param_groups[0]["lr"]
+            self.log("lr", lr, prog_bar=True)
+
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -114,13 +137,26 @@ def train():
                 mode="min",
                 save_top_k=3,
                 save_last=True,
-            )
+            ),
+            EarlyStopping(
+                monitor="val_loss",
+                patience=10,  # 连续 10 个 epoch 验证损失不下降则停止
+                mode="min",
+                verbose=True,
+            ),
         ],
     )
 
     trainer.fit(model, train_loader, val_loader)
     torch.save(model.model.state_dict(), "checkpoints/final_model.pt")
-    print(f"训练完成！最终验证损失：{trainer.callback_metrics['val_loss']:.4f}")
+    metrics = trainer.callback_metrics
+    print(
+        f"训练完成！"
+        f"验证损失：{metrics.get('val_loss', 0):.4f} | "
+        f"验证困惑度：{metrics.get('val_ppl', 0):.2f} | "
+        f"验证准确率：{metrics.get('val_acc', 0):.2%} | "
+        f"验证Top5准确率：{metrics.get('val_top5_acc', 0):.2%}"
+    )
 
 
 # ==================== 推理 ====================
