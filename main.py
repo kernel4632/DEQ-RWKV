@@ -178,6 +178,7 @@ def generate(model, prompt, max_length=32, temperature=1.0):
 
 # ==================== 入口 ====================
 if __name__ == "__main__":
+    # uv run main.py generate "你好"
     if len(sys.argv) > 1 and sys.argv[1] == "generate":
         prompt = sys.argv[2] if len(sys.argv) > 2 else "你好"
         model = Model(cfg).to(device)
