@@ -46,30 +46,32 @@ class TrainingModule(L.LightningModule):
     def forward(self, x):
         return self.model(x)
 
-    def training_step(self, batch, batch_idx):
+    def calculate_loss(self, batch):
         input_ids, target_ids = batch
         output, info = self.model(input_ids)
         loss = self.criterion(output.view(-1, output.size(-1)), target_ids.view(-1))
+        return loss
+
+    def training_step(self, batch, batch_idx):
+        loss = self.calculate_loss(batch)
 
         if torch.isnan(loss).any():
             raise ValueError("损失中出现 NaN")
 
-        self.log("train_loss", loss, prog_bar=True, on_epoch=True)
-        self.log("lr", self.lr, prog_bar=True)
+        self.log("训练损失", loss, prog_bar=True, on_epoch=True)
+        self.log("学习率", self.lr, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        input_ids, target_ids = batch
-        output, info = self.model(input_ids)
-        loss = self.criterion(output.view(-1, output.size(-1)), target_ids.view(-1))
+        loss = self.calculate_loss(batch)
 
-        self.log("val_loss", loss, prog_bar=True, on_epoch=True)
+        self.log("验证损失", loss, prog_bar=True, on_epoch=True)
         return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
         scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
+        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "验证损失"}
 
 
 # ==================== 训练函数 ====================
