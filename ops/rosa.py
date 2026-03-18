@@ -1,33 +1,17 @@
+import torch
+
+
 class ROSA:
-    """
-    后缀自动机在线序列预测器
-
-    用法：
-        rosa = ROSA()
-        结果 = rosa(序列, mode="value")       # 输出预测值列表
-        结果 = rosa(序列, mode="index")       # 输出匹配位置索引列表
-        结果 = rosa(序列, mode="both")        # 输出 (索引列表, 值列表)
-        结果 = rosa(序列, mode="last_value")  # 只输出最后一个位置的预测值
-        结果 = rosa(序列, mode="last_index")  # 只输出最后一个位置的匹配索引
-        结果 = rosa(序列, mode="last_both")   # 只输出最后一个位置的 (索引, 值)
-
-    支持输入：list, tuple, torch.Tensor (1D或2D), numpy.ndarray (1D或2D)
-    2D 输入视为批量数据，第一维是 batch，第二维是序列长度
-    """
-
     def __call__(self, x, mode="value"):
         batched_input, is_batched = self._to_batched_lists(x)
         batch_results = [self._process_single(seq, mode) for seq in batched_input]
-        return self._pack_output(batch_results, is_batched, mode)
+        return self._pack_output(batch_results, is_batched, mode, x)
 
     def _to_batched_lists(self, x):
-        # 尝试从 Tensor / ndarray 转成 python list
-        if hasattr(x, "tolist"):
-            x = x.tolist()
-        # 判断是否是批量数据（二维）：内层元素还是 list/tuple
-        if len(x) > 0 and isinstance(x[0], (list, tuple)):
-            return [list(seq) for seq in x], True
-        return [list(x)], False
+        raw = x.tolist() if hasattr(x, "tolist") else x
+        if len(raw) > 0 and isinstance(raw[0], (list, tuple)):
+            return [list(seq) for seq in raw], True
+        return [list(raw)], False
 
     def _process_single(self, x, mode):
         n = len(x)
@@ -111,15 +95,26 @@ class ROSA:
         else:
             raise ValueError(f"不支持的 mode: {mode}，可选: value, index, both, last_value, last_index, last_both")
 
-    def _pack_output(self, batch_results, is_batched, mode):
-        if not is_batched:
-            return batch_results[0]
-        # 批量模式：both 类的 mode 需要把 (indices, values) 拆开再分别聚合
+    def _pack_output(self, batch_results, is_batched, mode, x):
+        # 需要拆分 both 类型的结果
         if mode in ("both", "last_both"):
+            if not is_batched:
+                first, second = batch_results[0]
+                return self._to_tensor(first, x), self._to_tensor(second, x)
             all_first = [r[0] for r in batch_results]
             all_second = [r[1] for r in batch_results]
-            return all_first, all_second
-        return batch_results
+            return self._to_tensor(all_first, x), self._to_tensor(all_second, x)
+        if not is_batched:
+            return self._to_tensor(batch_results[0], x)
+        return self._to_tensor(batch_results, x)
+
+    def _to_tensor(self, data, x):
+        """如果输入是 Tensor，输出也转成同设备的 Tensor，-1 替换为 0"""
+        if hasattr(x, "device"):
+            t = torch.tensor(data, dtype=torch.long, device=x.device)
+            t = t.clamp(min=0)  # -1 变成 0，保证能安全过 embedding
+            return t
+        return data
 
 
 if __name__ == "__main__":
@@ -134,8 +129,6 @@ if __name__ == "__main__":
     # [[-1, -1, 0, 1], [-1, 0, 1, 2]]
 
     # ====== Tensor 输入 ======
-    import torch
-
     t = torch.tensor([[5, 6, 5, 6, 5], [9, 9, 9, 9, 9]])
     print(rosa(t, mode="value"))
     # [[-1, -1, -1, 5, 6], [-1, 9, 9, 9, 9]]

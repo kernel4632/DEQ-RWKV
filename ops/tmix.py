@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .wkv import wkv
+from .rosa import ROSA
 
 
 class Tmix(nn.Module):
@@ -62,6 +63,12 @@ class Tmix(nn.Module):
 
         # 时间移位操作
         self.time_shift = nn.ZeroPad2d((0, 0, 1, -1))
+
+        self.idx = None
+        self.rosa = ROSA()
+        self.rosa_emb = nn.Embedding(args.vocab_size, args.dim_att)
+        self.rosa_proj = nn.Linear(C, C, bias=False)
+        self.rosa_gate_w = nn.Parameter(torch.randn(1, 1, C))  # 门控的混合系数
 
         # 参数初始化
         self.init_weights()
@@ -129,6 +136,10 @@ class Tmix(nn.Module):
         # 初始化第一个值存储参数，用于值残差连接，设定为None，且可以由外部重置
         self.v_first = None
 
+        # ROSA 参数初始化
+        nn.init.xavier_uniform_(self.rosa_proj.weight, gain=nn.init.calculate_gain("linear"))
+        nn.init.normal_(self.rosa_gate_w, mean=0.0, std=0.01)
+
     def forward(self, x):
         B, T, C = x.size()
         H = self.n_head
@@ -173,6 +184,12 @@ class Tmix(nn.Module):
 
         # 参数梯度动力学？反正是来引导wkv模块里的参数学习的，加这个更好
         x = x + ((r.view(B, T, H, -1) * k.view(B, T, H, -1) * self.r_k).sum(dim=-1, keepdim=True) * v.view(B, T, H, -1)).view(B, T, C)
+
+        # 用一下 ROSA
+        rosa_ids = torch.tensor(self.rosa(self.idx), device=x.device, dtype=torch.long).clamp(min=0)
+        rosa_emb = self.rosa_emb(rosa_ids)  # 过 embedding 表拿向量 (B, T, C)
+        gate = torch.sigmoid(x * self.rosa_gate_w).mean(dim=-1, keepdim=True)
+        x = x * (1 - gate) + rosa_emb * gate
 
         # 应用输出门控和线性变换
         x = self.output(x * g)

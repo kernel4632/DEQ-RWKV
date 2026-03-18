@@ -30,7 +30,8 @@ class Model(nn.Module):
 
     def forward(self, x):
         x = self.preprocess(x)
-        # 设置索引参数，给DE用，内部不会改变
+        # 设置索引参数，给ROSA和DE用
+        self.block.tmix.idx = x
         self.block.cmix.idx = x
         x = self.emb(x)
         # 重置值残差参数
