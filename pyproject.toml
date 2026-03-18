@@ -5,14 +5,14 @@ description = "深度均衡模型与 RWKV-v7 架构结合的实验性项目"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "lightning>=2.6.1",
-    "matplotlib>=3.10.8",
+    "lightning",
+    "matplotlib",
     "muon-optimizer",
-    "numpy>=2.4.2",
-    "tensorboard>=2.20.0",
-    "torch>=2.10.0",
-    "torchdeq>=0.1.0",
-    "transformers>=4.30.0",
+    "numpy",
+    "tensorboard",
+    "torch",
+    "torchdeq",
+    "transformers",
 ]
 
 [tool.uv.sources]
