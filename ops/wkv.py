@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn.functional as F
 from torch.utils.cpp_extension import load
@@ -21,9 +22,15 @@ def _load_cuda_ext(head_size, dtype):
         extra_cflags.append("-D_FP32_")
 
     # 加载 CUDA 扩展
+    base_dir = os.path.dirname(__file__)
+    sources = [
+        os.path.join(base_dir, "cuda", "rwkv7_clampw.cu"),
+        os.path.join(base_dir, "cuda", "rwkv7_clampw.cpp"),
+    ]
+
     load(
         name=f"rwkv7_clampw_{'bf16' if is_bf16 else 'fp32'}_h{head_size}",
-        sources=["cuda/rwkv7_clampw.cu", "cuda/rwkv7_clampw.cpp"],
+        sources=sources,
         is_python_module=False,
         verbose=False,  # 设为 False 减少输出，如需调试可改为 True
         extra_cflags=extra_cflags,
@@ -110,9 +117,9 @@ if __name__ == "__main__":
     #    再经过 exp 后变成 0~1 之间的衰减因子。如果 w 太大，exp(-exp(w)) 会变成 0，导致 state 不衰减。
     #    如果 w 太小，exp(-exp(w)) 会变成 1，导致 state 不更新。
     #    这里我们生成 [-1, 1] 范围的随机数，比较安全。
-    
+
     r_cpu = torch.randn(BATCH_SIZE, SEQ_LEN, CHANNELS, dtype=DTYPE) * 0.1
-    w_cpu = torch.randn(BATCH_SIZE, SEQ_LEN, CHANNELS, dtype=DTYPE) * 0.5 - 1.0 # 偏向负值
+    w_cpu = torch.randn(BATCH_SIZE, SEQ_LEN, CHANNELS, dtype=DTYPE) * 0.5 - 1.0  # 偏向负值
     k_cpu = torch.randn(BATCH_SIZE, SEQ_LEN, CHANNELS, dtype=DTYPE) * 0.1
     v_cpu = torch.randn(BATCH_SIZE, SEQ_LEN, CHANNELS, dtype=DTYPE) * 0.1
     a_cpu = torch.randn(BATCH_SIZE, SEQ_LEN, CHANNELS, dtype=DTYPE) * 0.1
@@ -133,13 +140,13 @@ if __name__ == "__main__":
         # --- 前向传播测试 ---
         print("\n执行前向传播...")
         y_cpu = wkv_cpu(r_cpu, w_cpu, k_cpu, v_cpu, a_cpu, b_cpu, head_size=HEAD_SIZE)
-        
+
         # 检查输出是否有效
         if torch.isinf(y_cpu).any():
             raise ValueError("前向传播输出包含 inf")
         if torch.isnan(y_cpu).any():
             raise ValueError("前向传播输出包含 nan")
-            
+
         print("前向传播成功。")
         print(f"输出形状: {y_cpu.shape}")
         print(f"输出范数: {y_cpu.norm():.4f}")
@@ -149,16 +156,16 @@ if __name__ == "__main__":
         print("\n执行反向传播...")
         # 生成一个随机的梯度，同样保持较小的数值范围
         dy_cpu = torch.randn(BATCH_SIZE, SEQ_LEN, CHANNELS, dtype=DTYPE) * 0.1
-        
+
         y_cpu.backward(dy_cpu)
-        
+
         # 检查梯度是否有效
         grads = [r_cpu.grad, w_cpu.grad, k_cpu.grad, v_cpu.grad, a_cpu.grad, b_cpu.grad]
-        grad_names = ['r', 'w', 'k', 'v', 'a', 'b']
-        
+        grad_names = ["r", "w", "k", "v", "a", "b"]
+
         has_inf = False
         has_nan = False
-        
+
         for name, grad in zip(grad_names, grads):
             if torch.isinf(grad).any():
                 print(f"警告: {name} 的梯度包含 inf")
@@ -176,6 +183,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n测试失败，发生错误: {e}")
         import traceback
+
         traceback.print_exc()
 
     print("\n测试流程结束")

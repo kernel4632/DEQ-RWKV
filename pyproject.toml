@@ -8,6 +8,7 @@ dependencies = [
     "lightning",
     "matplotlib",
     "muon-optimizer",
+    "ninja>=1.13.0",
     "numpy",
     "tensorboard",
     "torch",
