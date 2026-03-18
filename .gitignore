@@ -8,5 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+
 checkpoints
 logs
+uv.lock
