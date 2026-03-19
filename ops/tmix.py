@@ -27,31 +27,31 @@ class Tmix(nn.Module):
         D_MV_LORA = args.D_MV_LORA
         D_GATE_LORA = args.D_GATE_LORA
 
-        self.x_r = nn.Parameter(torch.randn(1, 1, C))
-        self.x_w = nn.Parameter(torch.randn(1, 1, C))
-        self.x_k = nn.Parameter(torch.randn(1, 1, C))
-        self.x_v = nn.Parameter(torch.randn(1, 1, C))
-        self.x_a = nn.Parameter(torch.randn(1, 1, C))
-        self.x_g = nn.Parameter(torch.randn(1, 1, C))
+        self.x_r = nn.Parameter(torch.empty(1, 1, C))
+        self.x_w = nn.Parameter(torch.empty(1, 1, C))
+        self.x_k = nn.Parameter(torch.empty(1, 1, C))
+        self.x_v = nn.Parameter(torch.empty(1, 1, C))
+        self.x_a = nn.Parameter(torch.empty(1, 1, C))
+        self.x_g = nn.Parameter(torch.empty(1, 1, C))
 
-        self.w0 = nn.Parameter(torch.randn(1, 1, C))
-        self.w1 = nn.Parameter(torch.randn(C, D_DECAY_LORA))
-        self.w2 = nn.Parameter(torch.randn(D_DECAY_LORA, C))
+        self.w0 = nn.Parameter(torch.empty(1, 1, C))
+        self.w1 = nn.Parameter(torch.empty(C, D_DECAY_LORA))
+        self.w2 = nn.Parameter(torch.empty(D_DECAY_LORA, C))
 
-        self.a0 = nn.Parameter(torch.randn(1, 1, C))
-        self.a1 = nn.Parameter(torch.randn(C, D_AAA_LORA))
-        self.a2 = nn.Parameter(torch.randn(D_AAA_LORA, C))
+        self.a0 = nn.Parameter(torch.empty(1, 1, C))
+        self.a1 = nn.Parameter(torch.empty(C, D_AAA_LORA))
+        self.a2 = nn.Parameter(torch.empty(D_AAA_LORA, C))
 
-        self.v0 = nn.Parameter(torch.randn(1, 1, C))
-        self.v1 = nn.Parameter(torch.randn(C, D_MV_LORA))
-        self.v2 = nn.Parameter(torch.randn(D_MV_LORA, C))
+        self.v0 = nn.Parameter(torch.empty(1, 1, C))
+        self.v1 = nn.Parameter(torch.empty(C, D_MV_LORA))
+        self.v2 = nn.Parameter(torch.empty(D_MV_LORA, C))
 
-        self.g1 = nn.Parameter(torch.randn(C, D_GATE_LORA))
-        self.g2 = nn.Parameter(torch.randn(D_GATE_LORA, C))
+        self.g1 = nn.Parameter(torch.empty(C, D_GATE_LORA))
+        self.g2 = nn.Parameter(torch.empty(D_GATE_LORA, C))
 
-        self.k_k = nn.Parameter(torch.randn(1, 1, C))
-        self.k_a = nn.Parameter(torch.randn(1, 1, C))
-        self.r_k = nn.Parameter(torch.randn(H, N))
+        self.k_k = nn.Parameter(torch.empty(1, 1, C))
+        self.k_a = nn.Parameter(torch.empty(1, 1, C))
+        self.r_k = nn.Parameter(torch.empty(H, N))
 
         self.receptance = nn.Linear(C, C, bias=False)
         self.key = nn.Linear(C, C, bias=False)
@@ -64,11 +64,11 @@ class Tmix(nn.Module):
         # 时间移位操作
         self.time_shift = nn.ZeroPad2d((0, 0, 1, -1))
 
+        # ROSA 模块，idx由上层模块直接指定传递
         self.idx = None
         self.rosa = ROSA()
         self.rosa_emb = nn.Embedding(args.vocab_size, args.dim_att)
-        self.rosa_proj = nn.Linear(C, C, bias=False)
-        self.rosa_gate_w = nn.Parameter(torch.randn(1, 1, C))  # 门控的混合系数
+        self.rosa_gate_w = nn.Parameter(torch.empty(1, 1, C))  # 门控的混合系数
 
         # 参数初始化
         self.init_weights()
@@ -92,8 +92,11 @@ class Tmix(nn.Module):
             if name in ["receptance", "key", "value"]:
                 nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
             elif name == "output":
-                # 可以选择设为0：nn.init.zeros_(layer.weight)
-                nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
+                # 备选：nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
+                # 备选：nn.init.zeros_(layer.weight)
+                # 现在改为1/sqrt(2*n_layer)
+                nn.init.xavier_uniform_(layer.weight, gain=math.sqrt(2.0 / (C + C)))
+                
 
         # 初始化时间移位系数参数
         input_params = [self.x_r, self.x_w, self.x_k, self.x_v, self.x_a, self.x_g]
@@ -101,11 +104,10 @@ class Tmix(nn.Module):
             nn.init.normal_(param, mean=0.0, std=0.01)
 
         # 初始化核参数
-        kernel_params = [self.k_k, self.k_a]
-        for param in kernel_params:
-            nn.init.normal_(param, mean=0.0, std=0.02)
+        nn.init.normal_(self.k_k, mean=1.0, std=0.02)
+        nn.init.normal_(self.k_a, mean=0.0, std=0.02)
 
-        nn.init.orthogonal_(self.r_k)
+        nn.init.normal_(self.r_k, mean=0, std=0.01)
 
         lora_biases = [self.w0, self.a0, self.v0]
         for param in lora_biases:
@@ -137,7 +139,6 @@ class Tmix(nn.Module):
         self.v_first = None
 
         # ROSA 参数初始化
-        nn.init.xavier_uniform_(self.rosa_proj.weight, gain=nn.init.calculate_gain("linear"))
         nn.init.normal_(self.rosa_gate_w, mean=0.0, std=0.01)
 
     def forward(self, x):

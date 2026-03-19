@@ -41,7 +41,7 @@ cfg = Config()
 
 # ==================== 训练模块 ====================
 class TrainingModule(L.LightningModule):
-    def __init__(self, args, lr=3e-4):
+    def __init__(self, args, lr=3e-2):
         super().__init__()
         self.model = Model(args)
         self.lr = lr
