@@ -13,7 +13,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def _load_tokens(file_path, max_length=32):
     """从 JSONL 文件加载并编码所有文本"""
     with open(file_path, "r", encoding="utf-8") as f:
-        return [tokenizer.encode(json.loads(line)["text"])[:max_length] for line in f]
+        return [tokenizer.encode(json.loads(line)["text"])[:max_length+1] for line in f]
 
 
 class TokenDataset(Dataset):
