@@ -1,0 +1,15 @@
+$:
+  vscode:
+    - docker:
+        build: .ide/Dockerfile
+      runner:
+        # 启动一个能使用 gpu 的云原生开发环境
+        tags: cnb:arch:amd64:gpu
+      services:
+        - vscode
+        - docker
+      stages:
+        - name: install deps
+          script: cd /workspace && uv sync   # 启动后在工作区执行
+        - name: ls
+          script: ls -al
