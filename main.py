@@ -1,4 +1,5 @@
 import sys
+import os
 import torch
 import torch.nn as nn
 from dataclasses import dataclass
@@ -11,7 +12,6 @@ from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from muon import MuonWithAuxAdam
 from ops.model import Model
 from data.dataset import create_dataloaders, tokenizer, device
-
 
 # ==================== 配置 ====================
 @dataclass
@@ -26,7 +26,7 @@ class Config:
     D_AAA_LORA: int = 64
     D_MV_LORA: int = 32
     D_GATE_LORA: int = 96
-    max_iter: int = 12
+    max_iter: int = 32
     f_tol: float = 1e-6
     # 训练
     lr: float = 1e-3
@@ -43,6 +43,7 @@ cfg = Config()
 class TrainingModule(L.LightningModule):
     def __init__(self, args, lr=3e-2):
         super().__init__()
+        self.save_hyperparameters(ignore=["args"])  # 只保存 lr，不保存 args
         self.model = Model(args)
         self.lr = lr
         self.criterion = nn.CrossEntropyLoss()
@@ -52,7 +53,7 @@ class TrainingModule(L.LightningModule):
 
     def _step(self, batch, prefix):
         input_ids, target_ids = batch
-        output, _ = self(input_ids)
+        output, info = self(input_ids)
 
         logits_flat = output.view(-1, output.size(-1))
         targets_flat = target_ids.view(-1)
@@ -121,6 +122,8 @@ def train():
         max_length=cfg.max_length,
         val_split=cfg.val_split,
     )
+    ckpt_path = "checkpoints/last.ckpt"
+    resume_path = ckpt_path if os.path.exists(ckpt_path) else None
 
     trainer = L.Trainer(
         max_epochs=cfg.epochs,
@@ -137,6 +140,7 @@ def train():
                 mode="min",
                 save_top_k=3,
                 save_last=True,
+                every_n_train_steps=100,  # 每 100 个 batch 也保存一次 last.ckpt
             ),
             EarlyStopping(
                 monitor="val_loss",
@@ -147,7 +151,7 @@ def train():
         ],
     )
 
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model, train_loader, val_loader, ckpt_path=resume_path)
     torch.save(model.model.state_dict(), "checkpoints/final_model.pt")
     metrics = trainer.callback_metrics
     print(
@@ -181,12 +185,23 @@ if __name__ == "__main__":
     # uv run main.py generate "你好"
     if len(sys.argv) > 1 and sys.argv[1] == "generate":
         prompt = sys.argv[2] if len(sys.argv) > 2 else "你好"
+
+        # 优先用 final_model.pt，没有则从 last.ckpt 提取
+        pt_path = "checkpoints/final_model.pt"
+        ckpt_path = "checkpoints/last.ckpt"
+
         model = Model(cfg).to(device)
-        ckpt = "checkpoints/final_model.pt"
-        try:
-            model.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
-        except FileNotFoundError:
-            sys.exit(f"未找到模型文件：{ckpt}，请先训练模型")
+
+        if os.path.exists(pt_path):
+            model.load_state_dict(torch.load(pt_path, map_location=device, weights_only=True))
+        elif os.path.exists(ckpt_path):
+            # 从 Lightning checkpoint 中提取模型权重
+            ckpt = torch.load(ckpt_path, map_location=device)
+            state_dict = {k.replace("model.", "", 1): v for k, v in ckpt["state_dict"].items() if k.startswith("model.")}
+            model.load_state_dict(state_dict)
+        else:
+            sys.exit("未找到任何模型文件，请先训练模型")
+
         print(f"输入：{prompt}\n输出：{generate(model, prompt)}")
     else:
         train()
