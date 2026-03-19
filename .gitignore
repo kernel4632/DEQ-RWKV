@@ -13,3 +13,4 @@ wheels/
 checkpoints
 logs
 uv.lock
+*.pth
