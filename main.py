@@ -1,17 +1,18 @@
-import sys
 import os
+import sys
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
-
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from muon import MuonWithAuxAdam
+
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 
-from muon import MuonWithAuxAdam
+from dataclasses import dataclass
 from ops.model import Model
 from data.dataset import create_dataloaders, tokenizer, device
+
 
 # ==================== 配置 ====================
 @dataclass
@@ -19,33 +20,34 @@ class Config:
     """模型和训练配置，可直接作为 args 传给 Model"""
 
     # 模型
-    n_embd: int = 384
-    head_size: int = 64
-    vocab_size: int = 6400
-    D_DECAY_LORA: int = 64
-    D_AAA_LORA: int = 64
-    D_MV_LORA: int = 32
-    D_GATE_LORA: int = 96
-    max_iter: int = 32
-    f_tol: float = 1e-6
+    n_embd = 384  # 384/512
+    head_size = 64  # 性价比
+    vocab_size = 6400  # 来自tokenizer
+    D_DECAY_LORA = 64
+    D_AAA_LORA = 64
+    D_MV_LORA = 32
+    D_GATE_LORA = 96
+    # DEQ
+    max_iter = 12  # 迭代次数
+    f_tol = 1e-6  # 收敛阈值
     # 训练
-    lr: float = 1e-3
-    batch_size: int = 10
-    max_length: int = 32
-    epochs: int = 100
-    val_split: float = 0.1
+    lr = 1e-3
+    batch_size = 10
+    max_length = 32
+    epochs = 100
+    val_split = 0.1  # 验证集占比，10%
 
 
-cfg = Config()
+config = Config()
 
 
 # ==================== 训练模块 ====================
 class TrainingModule(L.LightningModule):
     def __init__(self, args, lr=3e-2):
         super().__init__()
-        self.save_hyperparameters(ignore=["args"])  # 只保存 lr，不保存 args
-        self.model = Model(args)
+        self.save_hyperparameters(ignore=["args"])
         self.lr = lr
+        self.model = Model(args)
         self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, x):
@@ -53,7 +55,7 @@ class TrainingModule(L.LightningModule):
 
     def _step(self, batch, prefix):
         input_ids, target_ids = batch
-        output, info = self(input_ids)
+        output, _ = self(input_ids)
 
         logits_flat = output.view(-1, output.size(-1))
         targets_flat = target_ids.view(-1)
@@ -73,11 +75,7 @@ class TrainingModule(L.LightningModule):
         self.log(f"{prefix}_ppl", ppl, prog_bar=True, on_epoch=True)
         self.log(f"{prefix}_acc", acc, prog_bar=True, on_epoch=True)
         self.log(f"{prefix}_top5_acc", top5_acc, on_epoch=True)
-
-        # 训练时额外记录学习率
-        if prefix == "train":
-            lr = self.optimizers().param_groups[0]["lr"]
-            self.log("lr", lr, prog_bar=True)
+        self.log("lr", self.optimizers().param_groups[0]["lr"], prog_bar=True)
 
         return loss
 
@@ -115,18 +113,18 @@ class TrainingModule(L.LightningModule):
 
 # ==================== 训练 ====================
 def train():
-    model = TrainingModule(cfg, lr=cfg.lr)
+    model = TrainingModule(config, lr=config.lr)
     train_loader, val_loader = create_dataloaders(
         "data/test.jsonl",
-        batch_size=cfg.batch_size,
-        max_length=cfg.max_length,
-        val_split=cfg.val_split,
+        batch_size=config.batch_size,
+        max_length=config.max_length,
+        val_split=config.val_split,
     )
     ckpt_path = "checkpoints/last.ckpt"
     resume_path = ckpt_path if os.path.exists(ckpt_path) else None
 
     trainer = L.Trainer(
-        max_epochs=cfg.epochs,
+        max_epochs=config.epochs,
         accelerator="auto",
         devices=1,
         log_every_n_steps=1,
@@ -156,6 +154,12 @@ def train():
     metrics = trainer.callback_metrics
     print(
         f"训练完成！"
+        f"训练损失：{metrics.get('train_loss', 0):.4f} | "
+        f"训练困惑度：{metrics.get('train_ppl', 0):.2f} | "
+        f"训练准确率：{metrics.get('train_acc', 0):.2%} | "
+        f"训练Top5准确率：{metrics.get('train_top5_acc', 0):.2%} | "
+        "\n"
+        f"学习率：{metrics.get('lr', 0):.6f} | "
         f"验证损失：{metrics.get('val_loss', 0):.4f} | "
         f"验证困惑度：{metrics.get('val_ppl', 0):.2f} | "
         f"验证准确率：{metrics.get('val_acc', 0):.2%} | "
@@ -165,7 +169,7 @@ def train():
 
 # ==================== 推理 ====================
 @torch.no_grad()
-def generate(model, prompt, max_length=32, temperature=1.0):
+def generate(model, prompt, max_length=64, temperature=1.0):
     model.eval()
     input_ids = torch.tensor([tokenizer.encode(prompt)], device=device)
     eos_id = tokenizer.eos_token_id
@@ -190,7 +194,7 @@ if __name__ == "__main__":
         pt_path = "checkpoints/final_model.pt"
         ckpt_path = "checkpoints/last.ckpt"
 
-        model = Model(cfg).to(device)
+        model = Model(config).to(device)
 
         if os.path.exists(pt_path):
             model.load_state_dict(torch.load(pt_path, map_location=device, weights_only=True))
