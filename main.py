@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from ops.model import Model
 from data.dataset import create_dataloaders, tokenizer, device
 
-
+torch.manual_seed(42)  
 # ==================== 配置 ====================
 @dataclass
 class Config:

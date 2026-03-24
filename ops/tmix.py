@@ -27,27 +27,18 @@ class Tmix(nn.Module):
         D_MV_LORA = args.D_MV_LORA
         D_GATE_LORA = args.D_GATE_LORA
 
-        self.x_r = nn.Parameter(torch.empty(1, 1, C))
-        self.x_w = nn.Parameter(torch.empty(1, 1, C))
-        self.x_k = nn.Parameter(torch.empty(1, 1, C))
-        self.x_v = nn.Parameter(torch.empty(1, 1, C))
-        self.x_a = nn.Parameter(torch.empty(1, 1, C))
-        self.x_g = nn.Parameter(torch.empty(1, 1, C))
+        for name in ["x_r", "x_w", "x_k", "x_v", "x_a", "x_g", "w0", "a0", "v0"]:
+            setattr(self, name, nn.Parameter(torch.empty(1, 1, C)))
 
-        self.w0 = nn.Parameter(torch.empty(1, 1, C))
-        self.w1 = nn.Parameter(torch.empty(C, D_DECAY_LORA))
-        self.w2 = nn.Parameter(torch.empty(D_DECAY_LORA, C))
-
-        self.a0 = nn.Parameter(torch.empty(1, 1, C))
-        self.a1 = nn.Parameter(torch.empty(C, D_AAA_LORA))
-        self.a2 = nn.Parameter(torch.empty(D_AAA_LORA, C))
-
-        self.v0 = nn.Parameter(torch.empty(1, 1, C))
-        self.v1 = nn.Parameter(torch.empty(C, D_MV_LORA))
-        self.v2 = nn.Parameter(torch.empty(D_MV_LORA, C))
-
-        self.g1 = nn.Parameter(torch.empty(C, D_GATE_LORA))
-        self.g2 = nn.Parameter(torch.empty(D_GATE_LORA, C))
+        lora_shapes = {
+            "w": (C, D_DECAY_LORA),
+            "a": (C, D_AAA_LORA),
+            "v": (C, D_MV_LORA),
+            "g": (C, D_GATE_LORA),
+        }
+        for prefix, (d_in, d_out) in lora_shapes.items():
+            setattr(self, f"{prefix}1", nn.Parameter(torch.empty(d_in, d_out)))
+            setattr(self, f"{prefix}2", nn.Parameter(torch.empty(d_out, d_in)))
 
         self.k_k = nn.Parameter(torch.empty(1, 1, C))
         self.k_a = nn.Parameter(torch.empty(1, 1, C))
@@ -82,21 +73,12 @@ class Tmix(nn.Module):
         C = self.n_embd
 
         # 初始化线性层权重
-        linear_layers = {
-            "receptance": self.receptance,
-            "key": self.key,
-            "value": self.value,
-            "output": self.output,
-        }
-        for name, layer in linear_layers.items():
-            if name in ["receptance", "key", "value"]:
-                nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
-            elif name == "output":
-                # 备选：nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
-                # 备选：nn.init.zeros_(layer.weight)
-                # 现在改为1/sqrt(2*n_layer)
-                nn.init.xavier_uniform_(layer.weight, gain=math.sqrt(2.0 / (C + C)))
-                
+        for layer in [self.receptance, self.key, self.value]:
+            nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
+        # 备选：nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
+        # 备选：nn.init.zeros_(layer.weight)
+        # 现在改为1/sqrt(2*n_layer)
+        nn.init.xavier_uniform_(self.output.weight, gain=math.sqrt(2.0 / (C + C)))
 
         # 初始化时间移位系数参数
         input_params = [self.x_r, self.x_w, self.x_k, self.x_v, self.x_a, self.x_g]
@@ -148,12 +130,8 @@ class Tmix(nn.Module):
         xx = self.time_shift(x) - x
 
         # 应用时间移位系数到不同的计算路径
-        xr = x + xx * self.x_r  # receptance 路径
-        xw = x + xx * self.x_w  # 衰减路径
-        xk = x + xx * self.x_k  # 键路径
-        xv = x + xx * self.x_v  # 值路径
-        xa = x + xx * self.x_a  # 上下文学习率路径
-        xg = x + xx * self.x_g  # 门控路径
+        x_mix = torch.stack([self.x_r, self.x_w, self.x_k, self.x_v, self.x_a, self.x_g], dim=0)
+        xr, xw, xk, xv, xa, xg = (x + xx * m for m in x_mix)
 
         # 计算 receptance, 衰减权重, 键和值
         r = self.receptance(xr)
