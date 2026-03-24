@@ -1,9 +1,22 @@
+"""训练与推理入口。
+
+这个文件只做两件事：
+1. 组装训练流程。
+2. 提供最简单的命令行推理入口。
+
+调用方式：
+- 训练：`uv run main.py`
+- 推理：`uv run main.py generate "你好"`
+
+这里刻意把“配置、训练步骤、推理步骤、权重加载”拆开写，
+这样读代码时不用在一个超长函数里来回跳。
+"""
+
 import os
 import sys
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from muon import MuonWithAuxAdam
 
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
@@ -93,6 +106,8 @@ class TrainingModule(L.LightningModule):
             # CPU 测试：直接用 AdamW，不依赖分布式
             optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=0.01)
         else:
+            from muon import MuonWithAuxAdam
+
             block_matrix = [p for p in self.model.block.parameters() if p.ndim >= 2]
             block_other = [p for p in self.model.block.parameters() if p.ndim < 2]
             non_block = [*self.model.emb.parameters(), *self.model.ln_out.parameters(), *self.model.head.parameters()]
@@ -116,11 +131,12 @@ def train():
     # 为 Muon 优化器初始化单进程分布式环境
     if torch.cuda.is_available():
         import torch.distributed as dist
+
         if not dist.is_initialized():
             os.environ.setdefault("MASTER_ADDR", "localhost")
             os.environ.setdefault("MASTER_PORT", "29500")
             dist.init_process_group(backend="nccl", rank=0, world_size=1)
-        
+
     model = TrainingModule(config, lr=config.lr)
     train_loader, val_loader = create_dataloaders(
         "data/test.jsonl",
