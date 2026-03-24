@@ -3,9 +3,8 @@ name = "deq-rwkv"
 version = "0.1.0"
 description = "DEQ与 RWKV-v7 架构结合的实验性项目"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
-    "datasets",
     "lightning",
     "matplotlib",
     "muon-optimizer",
