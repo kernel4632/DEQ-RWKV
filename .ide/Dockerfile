@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     vim \
     nano \
+    # 【修改】在这里添加了 zsh
+    zsh \
     tmux \
     htop \
     build-essential \
