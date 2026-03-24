@@ -114,11 +114,12 @@ class TrainingModule(L.LightningModule):
 # ==================== 训练 ====================
 def train():
     # 为 Muon 优化器初始化单进程分布式环境
-    import torch.distributed as dist
-    if not dist.is_initialized():
-        os.environ.setdefault("MASTER_ADDR", "localhost")
-        os.environ.setdefault("MASTER_PORT", "29500")
-        dist.init_process_group(backend="nccl", rank=0, world_size=1)
+    if torch.cuda.is_available():
+        import torch.distributed as dist
+        if not dist.is_initialized():
+            os.environ.setdefault("MASTER_ADDR", "localhost")
+            os.environ.setdefault("MASTER_PORT", "29500")
+            dist.init_process_group(backend="nccl", rank=0, world_size=1)
         
     model = TrainingModule(config, lr=config.lr)
     train_loader, val_loader = create_dataloaders(

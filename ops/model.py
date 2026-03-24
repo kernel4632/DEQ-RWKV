@@ -33,6 +33,8 @@ class Model(nn.Module):
         # 设置索引参数，给ROSA和DE用
         self.block.tmix.idx = x
         self.block.cmix.idx = x
+        self.block.idx = None
+        
         x = self.emb(x)
         # 重置值残差参数
         self.block.tmix.v_first = None
