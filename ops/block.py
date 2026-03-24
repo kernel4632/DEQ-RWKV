@@ -30,11 +30,11 @@ class Block(nn.Module):
             emb = self.emb(self.idx)
             gate = torch.sigmoid(x * self.gate).mean(dim=-1, keepdim=True)
             x = x * (1 - gate) + emb * gate
-
+        # --------------------
         x = x + self.tmix(self.ln1(x))
         # 注意：根据实验，发现此处不能像原版那样使用残差连接，否则容易NaN，造成原因不明
         x = self.cmix(self.ln2(x))
-
+        # --------------------
         logits = self.head(x)
 
         soft_prob = F.softmax(logits / self.soft_tau, dim=-1)
