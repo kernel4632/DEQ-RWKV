@@ -5,11 +5,13 @@ description = "DEQ与 RWKV-v7 架构结合的实验性项目"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "datasets,
     "lightning",
     "matplotlib",
     "muon-optimizer",
-    "ninja>=1.13.0",
+    "ninja,
     "numpy",
+    "pyarrow,
     "tensorboard",
     "torch",
     "torchdeq",
