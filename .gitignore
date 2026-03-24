@@ -14,3 +14,5 @@ checkpoints
 logs
 uv.lock
 *.pth
+*.parquet
+test.py

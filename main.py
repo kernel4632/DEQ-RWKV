@@ -26,7 +26,9 @@ from dataclasses import dataclass
 from ops.model import Model
 from data.dataset import create_dataloaders, tokenizer, device
 
-torch.manual_seed(42)  
+torch.manual_seed(42)
+
+
 # ==================== 配置 ====================
 @dataclass
 class Config:
@@ -45,7 +47,7 @@ class Config:
     f_tol = 1e-6  # 收敛阈值
     # 训练
     lr = 1e-3
-    batch_size = 10
+    batch_size = 128
     max_length = 32
     epochs = 100
     val_split = 0.1  # 验证集占比，10%
@@ -138,11 +140,19 @@ def train():
             dist.init_process_group(backend="nccl", rank=0, world_size=1)
 
     model = TrainingModule(config, lr=config.lr)
+    # train_loader, val_loader = create_dataloaders(
+    #     "data/test.jsonl",
+    #     batch_size=config.batch_size,
+    #     max_length=config.max_length,
+    #     val_split=config.val_split,
+    # )
     train_loader, val_loader = create_dataloaders(
-        "data/test.jsonl",
+        parquet_path="data/00000.parquet",  # 或 "data/*.parquet"
         batch_size=config.batch_size,
         max_length=config.max_length,
-        val_split=config.val_split,
+        val_split=0.05,  # 小模型验证集可以小一点
+        min_score=0.78,  # 根据效果可调：越高数据越精华，但数量越少
+        sample_fraction=0.25,  # 先用 25% 测试，逐步调高直到接近 3GB
     )
     ckpt_path = "checkpoints/last.ckpt"
     resume_path = ckpt_path if os.path.exists(ckpt_path) else None
