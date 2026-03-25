@@ -24,9 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
     pip config set install.trusted-host mirrors.aliyun.com
 
-# 3. 安装 Python 包（处理 NGC constraint + git 安装 Muon）
+# Python 包安装（已包含 muon-optimizer + 修复 wheel 问题）
 RUN : > /etc/pip/constraint.txt && \
-    pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir --upgrade pip setuptools && \
+    pip install --no-cache-dir --ignore-installed wheel && \
     pip install --no-cache-dir \
         lightning \
         matplotlib \
