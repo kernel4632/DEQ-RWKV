@@ -14,21 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     locales \
     language-pack-zh-hans \
     fonts-noto-cjk \
-    git \
-    curl \
-    wget \
-    vim \
-    nano \
-    zsh \
-    tmux \
-    htop \
-    libgl1-mesa-glx \
-    libsm6 \
-    libxext6 \
+    git curl wget vim nano zsh tmux htop \
+    libsm6 libxext6 \
     && locale-gen zh_CN.UTF-8 \
     && update-locale LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 # 2. 配置 pip 国内加速（阿里云）
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
