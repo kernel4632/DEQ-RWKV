@@ -20,7 +20,6 @@ class Block(nn.Module):
         self.head = nn.Linear(args.n_embd, self.rosa_vocab_size, bias=False)
         self.gate = nn.Parameter(torch.empty(1, 1, args.n_embd))
         self.soft_gate = nn.Parameter(torch.empty(1, 1, args.n_embd))
-        self.soft_tau = 1.0
         nn.init.normal_(self.gate, mean=0.0, std=0.01)
         nn.init.normal_(self.soft_gate, mean=0.0, std=0.01)
         self.idx = None
@@ -37,7 +36,7 @@ class Block(nn.Module):
         # --------------------
         logits = self.head(x)
 
-        soft_prob = F.softmax(logits / self.soft_tau, dim=-1)
+        soft_prob = F.softmax(logits, dim=-1)
         soft_emb = soft_prob @ self.emb.weight
         soft_gate = torch.sigmoid(x * self.soft_gate).mean(dim=-1, keepdim=True)
         x = x * (1 - soft_gate) + soft_emb * soft_gate

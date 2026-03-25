@@ -38,10 +38,10 @@ class Config:
     n_embd = 384  # 384/512
     head_size = 64  # 性价比
     vocab_size = 6400  # 来自tokenizer
-    D_DECAY_LORA = 64
-    D_AAA_LORA = 64
-    D_MV_LORA = 32
-    D_GATE_LORA = 96
+    W_RANK = 64
+    A_RANK = 64
+    V_RANK = 32
+    G_RANK = 96
     # DEQ
     max_iter = 12  # 迭代次数
     f_tol = 1e-6  # 收敛阈值
@@ -60,7 +60,7 @@ config = Config()
 class TrainingModule(L.LightningModule):
     def __init__(self, args, lr=3e-2):
         super().__init__()
-        self.save_hyperparameters(ignore=["args"])
+        self.save_hyperparameters()
         self.lr = lr
         self.model = Model(args)
         self.criterion = nn.CrossEntropyLoss()
@@ -140,20 +140,20 @@ def train():
             dist.init_process_group(backend="nccl", rank=0, world_size=1)
 
     model = TrainingModule(config, lr=config.lr)
-    # train_loader, val_loader = create_dataloaders(
-    #     "data/test.jsonl",
-    #     batch_size=config.batch_size,
-    #     max_length=config.max_length,
-    #     val_split=config.val_split,
-    # )
     train_loader, val_loader = create_dataloaders(
-        parquet_path="data/00000.parquet",  # 或 "data/*.parquet"
+        "data/test.jsonl",
         batch_size=config.batch_size,
         max_length=config.max_length,
-        val_split=0.05,  # 小模型验证集可以小一点
-        min_score=0.78,  # 根据效果可调：越高数据越精华，但数量越少
-        sample_fraction=0.25,  # 先用 25% 测试，逐步调高直到接近 3GB
+        val_split=config.val_split,
     )
+    # train_loader, val_loader = create_dataloaders(
+    #     parquet_path="data/00000.parquet",  # 或 "data/*.parquet"
+    #     batch_size=config.batch_size,
+    #     max_length=config.max_length,
+    #     val_split=0.05,  # 小模型验证集可以小一点
+    #     min_score=0.78,  # 根据效果可调：越高数据越精华，但数量越少
+    #     sample_fraction=0.25,  # 先用 25% 测试，逐步调高直到接近 3GB
+    # )
     ckpt_path = "checkpoints/last.ckpt"
     resume_path = ckpt_path if os.path.exists(ckpt_path) else None
 
