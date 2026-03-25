@@ -147,7 +147,7 @@ class Tmix(nn.Module):
         x = x + ((r.view(B, T, H, -1) * k.view(B, T, H, -1) * self.r_k).sum(dim=-1, keepdim=True) * v.view(B, T, H, -1)).view(B, T, C)
 
         # 用一下 ROSA，这个是用来互补注意力的
-        rosa_ids = self.rosa(self.idx, return_type="tensor").clamp(min=0)
+        rosa_ids = self.rosa(self.idx, return_type="tensor").clamp(min=0).to(x.device)
         rosa_emb = self.rosa_emb(rosa_ids)  # 过 embedding 表拿向量 (B, T, C)
         gate = torch.sigmoid(x * self.rosa_gate).mean(dim=-1, keepdim=True)
         x = x * (1 - gate) + rosa_emb * gate
