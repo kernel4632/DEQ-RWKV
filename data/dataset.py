@@ -125,8 +125,8 @@ def create_dataloaders(
 
     print(f"数据集拆分：训练集 {len(train_tokens)} 条，验证集 {len(val_tokens)} 条")
 
-    train_loader = DataLoader(TokenDataset(train_tokens), batch_size=batch_size, shuffle=True, collate_fn=_collate_fn)
+    train_loader = DataLoader(TokenDataset(train_tokens), batch_size=batch_size, num_workers=4, shuffle=True, collate_fn=_collate_fn)
 
-    val_loader = DataLoader(TokenDataset(val_tokens), batch_size=batch_size, shuffle=False, collate_fn=_collate_fn)
+    val_loader = DataLoader(TokenDataset(val_tokens), batch_size=batch_size, num_workers=4, shuffle=False, collate_fn=_collate_fn)
 
     return train_loader, val_loader

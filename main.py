@@ -140,20 +140,20 @@ def train():
             dist.init_process_group(backend="nccl", rank=0, world_size=1)
 
     model = TrainingModule(config, lr=config.lr)
-    train_loader, val_loader = create_dataloaders(
-        "data/test.jsonl",
-        batch_size=config.batch_size,
-        max_length=config.max_length,
-        val_split=config.val_split,
-    )
     # train_loader, val_loader = create_dataloaders(
-    #     parquet_path="data/00000.parquet",  # 或 "data/*.parquet"
+    #     "data/test.jsonl",
     #     batch_size=config.batch_size,
     #     max_length=config.max_length,
-    #     val_split=0.05,  # 小模型验证集可以小一点
-    #     min_score=0.78,  # 根据效果可调：越高数据越精华，但数量越少
-    #     sample_fraction=0.25,  # 先用 25% 测试，逐步调高直到接近 3GB
+    #     val_split=config.val_split,
     # )
+    train_loader, val_loader = create_dataloaders(
+        parquet_path="data/00000.parquet",  # 或 "data/*.parquet"
+        batch_size=config.batch_size,
+        max_length=config.max_length,
+        val_split=0.05,  # 小模型验证集可以小一点
+        min_score=0.78,  # 根据效果可调：越高数据越精华，但数量越少
+        sample_fraction=0.25,  # 先用 25% 测试，逐步调高直到接近 3GB
+    )
     ckpt_path = "checkpoints/last.ckpt"
     resume_path = ckpt_path if os.path.exists(ckpt_path) else None
 
