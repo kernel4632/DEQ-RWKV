@@ -20,3 +20,4 @@ dependencies = [
 
 [tool.uv.sources]
 muon-optimizer = { git = "https://github.com/KellerJordan/Muon" }
+torchdeq = { git = "https://github.com/sablin39/torchdeq.git" }
