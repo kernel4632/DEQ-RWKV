@@ -21,15 +21,10 @@ class Tmix(nn.Module):
         N = self.head_size
         C = args.n_embd
 
-        W_RANK = args.W_RANK
-        A_RANK = args.A_RANK
-        V_RANK = args.V_RANK
-        G_RANK = args.G_RANK
-
         for name in ["x_r", "x_w", "x_k", "x_v", "x_a", "x_g", "w0", "a0", "v0"]:
             setattr(self, name, nn.Parameter(torch.empty(1, 1, C)))
 
-        lora_shapes = {"w": (C, W_RANK), "a": (C, A_RANK), "v": (C, V_RANK), "g": (C, G_RANK)}
+        lora_shapes = {"w": (C, args.W_RANK), "a": (C, args.A_RANK), "v": (C, args.V_RANK), "g": (C, args.G_RANK)}
         for prefix, (d_in, d_out) in lora_shapes.items():
             setattr(self, f"{prefix}1", nn.Parameter(torch.empty(d_in, d_out)))
             setattr(self, f"{prefix}2", nn.Parameter(torch.empty(d_out, d_in)))
@@ -55,62 +50,16 @@ class Tmix(nn.Module):
         self.rosa_emb = nn.Embedding(args.vocab_size, args.dim_att)
         self.rosa_gate = nn.Parameter(torch.empty(1, 1, C))  # 门控的混合系数
 
-        # 参数初始化
-        self.init_weights(args)
-
-    def init_weights(self, args):
-        W_RANK = args.W_RANK
-        A_RANK = args.A_RANK
-        V_RANK = args.V_RANK
-        G_RANK = args.G_RANK
-
-        C = self.n_embd
-
-        # 初始化线性层权重
-        for layer in [self.receptance, self.key, self.value]:
-            nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
-
-        # 备选：nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
-        # 备选：nn.init.zeros_(layer.weight)
-        # 现在改为1/sqrt(2*n_layer)
-        nn.init.xavier_uniform_(self.output.weight, gain=math.sqrt(2.0 / (C + C)))
-
-        # 初始化时间移位系数参数
-        for param in [self.x_r, self.x_w, self.x_k, self.x_v, self.x_a, self.x_g]:
-            nn.init.normal_(param, mean=0.0, std=0.01)
-
-        # 初始化核参数
-        nn.init.normal_(self.k_k, mean=1.0, std=0.02)
-        nn.init.normal_(self.k_a, mean=0.0, std=0.02)
-        nn.init.normal_(self.r_k, mean=0.0, std=0.01)
-        nn.init.normal_(self.rosa_gate, mean=0.0, std=0.01)
-
-        for param in [self.w0, self.a0, self.v0]:
-            nn.init.normal_(param, mean=0.0, std=0.02)
-
-        def init_lora_param(param, in_dim, out_dim, nonlinearity="linear"):
-            gain = nn.init.calculate_gain(nonlinearity)
-            std = gain * math.sqrt(2.0 / (in_dim + out_dim))
-            nn.init.normal_(param, mean=0.0, std=std)
-
-        lora_inputs = [(self.w1, C, W_RANK, "tanh"), (self.a1, C, A_RANK, "sigmoid"), (self.v1, C, V_RANK, "linear"), (self.g1, C, G_RANK, "sigmoid")]
-        lora_outputs = [(self.w2, W_RANK, C, "linear"), (self.a2, A_RANK, C, "linear"), (self.v2, V_RANK, C, "linear"), (self.g2, G_RANK, C, "linear")]
-
-        # 应用 LoRA 参数初始化
-        for param, in_dim, out_dim, nonlinearity in lora_inputs + lora_outputs:
-            init_lora_param(param, in_dim, out_dim, nonlinearity)
-
         # 初始化第一个值存储参数，用于值残差连接，设定为None，且可以由外部重置
         self.v_first = None
 
-        # ROSA 参数初始化
+        # 参数初始化
+        self.init_weights(args)
 
     def forward(self, x):
         B, T, C = x.size()
         H = self.n_head
-
         xx = self.time_shift(x) - x
-
         # 应用时间移位系数到不同的计算路径
         x_mix = torch.stack([self.x_r, self.x_w, self.x_k, self.x_v, self.x_a, self.x_g], dim=0)
         xr, xw, xk, xv, xa, xg = (x + xx * m for m in x_mix)
@@ -155,3 +104,45 @@ class Tmix(nn.Module):
         # 应用输出门控和线性变换
         x = self.output(x * g)
         return x
+
+    def init_weights(self, args):
+        W_RANK = args.W_RANK
+        A_RANK = args.A_RANK
+        V_RANK = args.V_RANK
+        G_RANK = args.G_RANK
+
+        C = self.n_embd
+
+        # 初始化线性层权重
+        for layer in [self.receptance, self.key, self.value]:
+            nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
+
+        # 备选：nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain("linear"))
+        # 备选：nn.init.zeros_(layer.weight)
+        # 现在改为1/sqrt(2*n_layer)
+        nn.init.xavier_uniform_(self.output.weight, gain=math.sqrt(2.0 / (C + C)))
+
+        # 初始化时间移位系数参数
+        for param in [self.x_r, self.x_w, self.x_k, self.x_v, self.x_a, self.x_g]:
+            nn.init.normal_(param, mean=0.0, std=0.01)
+
+        # 初始化核参数
+        nn.init.normal_(self.k_k, mean=1.0, std=0.02)
+        nn.init.normal_(self.k_a, mean=0.0, std=0.02)
+        nn.init.normal_(self.r_k, mean=0.0, std=0.01)
+        nn.init.normal_(self.rosa_gate, mean=0.0, std=0.01)
+
+        for param in [self.w0, self.a0, self.v0]:
+            nn.init.normal_(param, mean=0.0, std=0.02)
+
+        def init_lora_param(param, in_dim, out_dim, nonlinearity="linear"):
+            gain = nn.init.calculate_gain(nonlinearity)
+            std = gain * math.sqrt(2.0 / (in_dim + out_dim))
+            nn.init.normal_(param, mean=0.0, std=std)
+
+        lora_inputs = [(self.w1, C, W_RANK, "tanh"), (self.a1, C, A_RANK, "sigmoid"), (self.v1, C, V_RANK, "linear"), (self.g1, C, G_RANK, "sigmoid")]
+        lora_outputs = [(self.w2, W_RANK, C, "linear"), (self.a2, A_RANK, C, "linear"), (self.v2, V_RANK, C, "linear"), (self.g2, G_RANK, C, "linear")]
+
+        # 应用 LoRA 参数初始化
+        for param, in_dim, out_dim, nonlinearity in lora_inputs + lora_outputs:
+            init_lora_param(param, in_dim, out_dim, nonlinearity)
