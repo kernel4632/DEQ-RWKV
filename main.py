@@ -19,7 +19,8 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import lightning as L
-from lightning.pytorch.loggers import CSVLogger
+from lightning.pytorch.loggers import TensorBoardLogger
+
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 
 from dataclasses import dataclass
@@ -141,10 +142,12 @@ def train():
 
     model = TrainingModule(config, lr=config.lr)
     # train_loader, val_loader = create_dataloaders(
-    #     "data/test.jsonl",
-    #     batch_size=config.batch_size,
-    #     max_length=config.max_length,
-    #     val_split=config.val_split,
+    #     parquet_path="data/test.jsonl",
+    #     batch_size=32,
+    #     max_length=32,
+    #     val_split=0.1,
+    #     min_score=0.0,
+    #     sample_fraction=1.0,
     # )
     train_loader, val_loader = create_dataloaders(
         parquet_path="data/00000.parquet",  # 或 "data/*.parquet"
@@ -163,7 +166,7 @@ def train():
         devices=1,
         log_every_n_steps=1,
         gradient_clip_val=0.5,
-        logger=CSVLogger("logs/", name="training"),
+        logger=TensorBoardLogger("logs/", name="training"),
         callbacks=[
             ModelCheckpoint(
                 dirpath="checkpoints/",
